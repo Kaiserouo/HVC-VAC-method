@@ -110,6 +110,7 @@ class VacHvcAlgorithm:
         # Making it a class to avoid directly manipulate main class' variable
         # since it WILL be a mess.
         # ma1 and ma2 should be same shape, of course
+        # `img_no` below specifies which `ma` to manipulate
         def __init__(self, ma1, ma2, kernel):
             self.ma1 = ma1.copy()
             self.ma2 = ma2.copy()
@@ -133,8 +134,7 @@ class VacHvcAlgorithm:
             pass
         
         def flipPixel(self, img_no: Literal[1, 2], pos: tuple[int, int]):
-            # flip the pixel on pos, will update both image and score matrix
-            # manipulate self.sp1 and sp2! don't touch self.rp1 and rp2.
+            # flip the pixel on pos, will update both self.ma1/2 and score matrix
             # Should be O(kernel.size) instead of O(ma1.size)
             pass
 
@@ -157,14 +157,14 @@ class VacHvcAlgorithm:
         vac = VACALgorithm(self.rp1, self.rp2)
         while MaxIterationCountNotMet():
             black_pos = vac.findVAC(img_no, 'all', 'cluster')
-            flipPixel(img_no, black_pos)
+            vac.flipPixel(img_no, black_pos)
             region = self.findBelongingRegion(black_pos)
             white_pos = self.findVAC(img_no, region, 'void')
             if TerminalConditionMet(white_pos, black_pos):
-                flipPixel(img_no, black_pos)
+                vac.flipPixel(img_no, black_pos)
                 break
-            flipPixel(img_no, white_pos)
-            swapPixel(2-img_no, black_pos, white_pos)
+            vac.flipPixel(img_no, white_pos)
+            vac.swapPixel(2-img_no, black_pos, white_pos)
 
         sp1, sp2 = vac.getMA()
         self.sp1 = sp1; self.sp2 = sp2
