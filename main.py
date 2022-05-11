@@ -241,9 +241,9 @@ class Test:
             vh.step3()
         print(f'Step 0~3 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
-        cv.imshow('rp1', Helper.binaryToProperImage(vh.rp1))
-        cv.imshow('rp2', Helper.binaryToProperImage(vh.rp2))
-        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.rp1, vh.rp2)))
+        cv.imshow('result1', Helper.binaryToProperImage(vh.result1))
+        cv.imshow('result2', Helper.binaryToProperImage(vh.result2))
+        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.result1, vh.result2)))
         cv.waitKey(0)
         
 if __name__ == '__main__':
