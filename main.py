@@ -11,6 +11,7 @@
 import cv2 as cv
 import numpy as np
 from typing import *
+import random
 
 from contextlib import contextmanager
 from timeit import default_timer
@@ -149,18 +150,17 @@ class VacHvcAlgorithm:
         def getMA(self):
             return self.ma1.copy(), self.ma2.copy()
 
-    def step1(self):
+    def step1(self, max_iter=100):
         # do VAC-operation 1 to generate threshold matrix
-        """
         # psuedocode for algorithm in step1, if I understood correctly
         img_no = random.choice([1, 2])
-        vac = VACALgorithm(self.rp1, self.rp2)
-        while MaxIterationCountNotMet():
+        vac = self.VACALgorithm(self.rp1, self.rp2)
+        for _ in range(max_iter):
             black_pos = vac.findVAC(img_no, 'all', 'cluster')
             vac.flipPixel(img_no, black_pos)
             region = self.findBelongingRegion(black_pos)
             white_pos = self.findVAC(img_no, region, 'void')
-            if TerminalConditionMet(white_pos, black_pos):
+            if white_pos == black_pos:
                 vac.flipPixel(img_no, black_pos)
                 break
             vac.flipPixel(img_no, white_pos)
@@ -169,16 +169,16 @@ class VacHvcAlgorithm:
         sp1, sp2 = vac.getMA()
         self.sp1 = sp1; self.sp2 = sp2
         return
-        """
-        pass
     
     def genDitherArray(self, sp):
         # use seed pattern `sp` to make dither array
+        # which is a very complicated step...but simply following 2nd paper
+        # should do the trick
         pass
     
     def genThresholdArray(self, da):
         # use dither array `da` to make threshold array
-        pass
+        return ((da.astype(float) + 0.5) / da.size * 255).astype(np.uint8)
 
     def step2(self):
         # do VAC-operation 2 on 2 seed images. 
@@ -190,13 +190,21 @@ class VacHvcAlgorithm:
     
     def thresholding(self, img, ta):
         # do thresholding using threshold array `ta` on image `img`
-        pass
+        # makes proper image
+        img = img.copy()
+        n, m = ta.shape
+        for r in range(img.shape[0]):
+            for c in range(img.shape[1]):
+                img[r, c] = 255 if img[r, c] >= ta[r%n, c%m] else 0
+        return img
 
     def step3(self):
         # do thresholding on both images, maybe returning or store the 2 result image...?
         self.result1 = self.thresholding(self.img1, self.ta1)
         self.result2 = self.thresholding(self.img2, self.ta2)
     
+# Test class running tests
+# No step 2 because displaying dither / threshold array is not really helpful
 class Test:
     @classmethod
     def Test_Step0(cls):
@@ -204,6 +212,34 @@ class Test:
         with Helper.elapsed_timer() as elapsed:
             vh.step0()
         print(f'Step 0 uses {elapsed():.5f} second')
+        cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
+        cv.imshow('rp1', Helper.binaryToProperImage(vh.rp1))
+        cv.imshow('rp2', Helper.binaryToProperImage(vh.rp2))
+        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.rp1, vh.rp2)))
+        cv.waitKey(0)
+
+    @classmethod
+    def Test_Step1(cls):
+        vh = VacHvcAlgorithm(Helper.makeSecret(), None, None)
+        with Helper.elapsed_timer() as elapsed:
+            vh.step0()
+            vh.step1()
+        print(f'Step 0~1 uses {elapsed():.5f} second')
+        cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
+        cv.imshow('sp1', Helper.binaryToProperImage(vh.sp1))
+        cv.imshow('sp2', Helper.binaryToProperImage(vh.sp2))
+        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.sp1, vh.sp2)))
+        cv.waitKey(0)
+
+    @classmethod
+    def Test_All(cls, img1, img2):
+        vh = VacHvcAlgorithm(Helper.makeSecret(), img1, img2)
+        with Helper.elapsed_timer() as elapsed:
+            vh.step0()
+            vh.step1()
+            vh.step2()
+            vh.step3()
+        print(f'Step 0~3 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
         cv.imshow('rp1', Helper.binaryToProperImage(vh.rp1))
         cv.imshow('rp2', Helper.binaryToProperImage(vh.rp2))
