@@ -15,6 +15,10 @@ import random
 
 from contextlib import contextmanager
 from timeit import default_timer
+import argparse
+import sys
+
+from pathlib import Path
 
 # Helper class containing functions for testing
 class Helper:
@@ -49,6 +53,13 @@ class Helper:
         img = img.copy()
         img[img > 0] = 255
         return img.astype(np.uint8)
+
+    @classmethod
+    def properToBinaryImage(cls, img):
+        # turn image full of 0s and 1s to proper, show-able image
+        img = img.copy()
+        img[img > 0] = 1
+        return img
     
 
 class VacHvcAlgorithm:
@@ -72,6 +83,9 @@ class VacHvcAlgorithm:
         self.step1()
         self.step2()
         self.step3()
+    
+    def getResult(self):
+        return self.result1, self.result2
 
     def makeGaussianKernel(self, kernel_sz=9, sigma=1.5):
         # kernel_sz must be odd
@@ -260,5 +274,49 @@ class Test:
         cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.result1, vh.result2)))
         cv.waitKey(0)
         
+
+def main():
+    description = (
+        "   VAC-based Halftoned Visual Cryptography (HVC-VAC)\n"
+        "   \n"
+        "   Given 2 (grayscale) images and 1 secret binary image,\n"
+        "   generate 2 binary images s.t. if you binary-AND those 2 images,\n"
+        "   you can see the secret image.\n"
+        "   \n"
+        "   All 3 input images should be the same size.\n"
+    )
+
+    parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--input", "-i", help="Greyscale images to be halftoned", required=True, nargs=2)
+    parser.add_argument("--secret", "-s", help="Binary secret image to be embedded", required=True)
+    parser.add_argument("--output", "-o", help="Binary output image path, should be 2 different path", required=True, nargs=2)
+    args = parser.parse_args()
+
+    input_paths = [Path(p) for p in args.input]
+    secret_path = Path(args.secret)
+    output_paths = [Path(p) for p in args.output]
+
+    if output_paths[0].resolve() == output_paths[1].resolve():
+        print('2 output path are the same!', file=sys.stderr)
+        exit(1)
+    
+    input_imgs = [cv.imread(str(p), cv.IMREAD_GRAYSCALE) for p in input_paths]
+    secret_img = cv.imread(str(secret_path), cv.IMREAD_GRAYSCALE)
+
+    if None in (input_imgs + [secret_img]):
+        print('Failed to read images!', file=sys.stderr)
+        exit(1)
+    
+    secret_img = Helper.properToBinaryImage(secret_img)
+
+    vachvc = VacHvcAlgorithm(secret_img, *input_imgs)
+    vachvc.execute()
+    output_imgs = vachvc.getResult()
+    
+    for output_img, output_path in zip(output_imgs, output_paths):
+        cv.imwrite(str(output_path), output_img)
+    
+    return
+
 if __name__ == '__main__':
-    Test.Test_Step0()
+    main()
