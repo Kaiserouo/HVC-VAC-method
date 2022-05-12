@@ -130,7 +130,7 @@ class VacHvcAlgorithm:
         # since it WILL be a mess.
         # ma1 and ma2 should be same shape, of course
         # `img_no` below specifies which `ma` to manipulate
-        def __init__(self, ma1, ma2, kernel):
+        def __init__(self, ma1, ma2, B_region, W_region, kernel):
             self.ma1 = ma1.copy()
             self.ma2 = ma2.copy()
             self.shape = self.ma1.shape
@@ -266,7 +266,7 @@ class VacHvcAlgorithm:
         bp = sp.copy() # binary pattern
         rank = num_ones - 1
         for r in range(rank, -1, -1):
-            vac = self.VACALgorithm(bp, bp) # for abusing the findVAC() method
+            vac = self.VACAlgorithm(bp, bp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
             cluster_pos = vac.findVAC(1, "black", "cluster")
             bp[cluster_pos] = WHITE
             da[cluster_pos] = r
@@ -275,14 +275,14 @@ class VacHvcAlgorithm:
         bp = sp.copy() # binary pattern
         rank = num_ones
         for r in range(rank, sp.size // 2):
-            vac = self.VACALgorithm(bp, bp) # for abusing the findVAC() method
+            vac = self.VACAlgorithm(bp, bp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
             void_pos = vac.findVAC(1, "black", "void")
             da[void_pos] = r
         
         # phase 3: enter RANK values from the half-way point and to all 1's
         rank = sp.size // 2
         for r in range(rank, sp.size + 1):
-            vac = self.VACALgorithm(bp, bp) # for abusing the findVAC() method
+            vac = self.VACAlgorithm(bp, bp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
             cluster_pos = vac.findVAC(1, "white", "cluster") # reverse the meaning of minority from 1 to 0
             da[cluster_pos] = r
 
