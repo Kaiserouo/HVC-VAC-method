@@ -138,7 +138,7 @@ class VacHvcAlgorithm:
             # flip the pixel on pos, will update both self.ma1/2 and score matrix
             # Should be O(kernel.size) instead of O(ma1.size)
 
-            img = self.img1 if img_no == 1 else self.img2
+            img = self.ma1 if img_no == 1 else self.ma2
             if img[pos] == 1:
                 img[pos] = 0
             else:
@@ -152,13 +152,17 @@ class VacHvcAlgorithm:
             if they are the same color: return
             else: flip them
             """
-            img = self.img1 if img_no == 1 else self.img2
+            img = self.ma1 if img_no == 1 else self.ma2
             img[pos1], img[pos2] = img[pos2], img[pos1]
 
             return
         
         def getMA(self):
             return self.ma1.copy(), self.ma2.copy()
+    
+    def findBelongingRegion(self, pos):
+        # find which region / color `pos` is on in secret image
+        return 'black' if self.B_region[pos] > 0 else 'white'
 
     def step1(self, max_iter=100):
         # do VAC-operation 1 to generate threshold matrix
