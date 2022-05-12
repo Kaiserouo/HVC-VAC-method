@@ -134,10 +134,17 @@ class VacHvcAlgorithm:
             # but take note of region problems...you can only consider points in specified region
             pass
         
-        def flipPixel(self, img_no: Literal[1, 2], pos: tuple[int, int]):
+        def flipPixel(self, img_no, pos):
             # flip the pixel on pos, will update both self.ma1/2 and score matrix
             # Should be O(kernel.size) instead of O(ma1.size)
-            pass
+
+            img = self.img1 if img_no == 1 else self.img2
+            if img[pos] == 1:
+                img[pos] = 0
+            else:
+                img[pos] = 1
+            
+            return 
 
         def swapPixel(self, img_no, pos1, pos2):
             # swap the pixel on pos1 and pos2, will also update score matrix
@@ -148,7 +155,7 @@ class VacHvcAlgorithm:
             img = self.img1 if img_no == 1 else self.img2
             img[pos1], img[pos2] = img[pos2], img[pos1]
 
-            pass
+            return
         
         def getMA(self):
             return self.ma1.copy(), self.ma2.copy()
