@@ -125,26 +125,29 @@ class VacHvcAlgorithm:
             # maybe do wrapped convolution from OpenCV? Refer to that github for detail...
             pass
             
-        def findVAC(self, img_no: Literal[1, 2], region: Literal['white', 'black', 'all'],
-                          vac: Literal['void', 'cluster']) -> tuple[int, int]:
-            # find largest void or cluster, on black or white or all region
-            # return image coordinate (written in (row, col))
+        # def findVAC(self, img_no: Literal[1, 2], region: Literal['white', 'black', 'all'],
+        #                   vac: Literal['void', 'cluster']) -> tuple[int, int]:
+        #     # find largest void or cluster, on black or white or all region
+        #     # return image coordinate (written in (row, col))
 
-            # do some np.min or max on score array should do the trick,
-            # but take note of region problems...you can only consider points in specified region
-            pass
+        #     # do some np.min or max on score array should do the trick,
+        #     # but take note of region problems...you can only consider points in specified region
+        #     pass
         
-        def flipPixel(self, img_no: Literal[1, 2], pos: tuple[int, int]):
-            # flip the pixel on pos, will update both self.ma1/2 and score matrix
-            # Should be O(kernel.size) instead of O(ma1.size)
-            pass
+        # def flipPixel(self, img_no: Literal[1, 2], pos: tuple[int, int]):
+        #     # flip the pixel on pos, will update both self.ma1/2 and score matrix
+        #     # Should be O(kernel.size) instead of O(ma1.size)
+        #     pass
 
-        def swapPixel(self, img_no: Literal[1, 2], pos1: tuple[int, int], pos2: tuple[int, int]):
+        def swapPixel(self, img_no, pos1, pos2):
             # swap the pixel on pos1 and pos2, will also update score matrix
             """
             if they are the same color: return
             else: flip them
             """
+            img = self.img1 if img_no == 1 else self.img2
+            img[pos1], img[pos2] = img[pos2], img[pos1]
+            
             pass
         
         def getMA(self):
