@@ -20,6 +20,8 @@ import sys
 
 from pathlib import Path
 
+from scipy.signal import convolve2d
+
 # Helper class containing functions for testing
 class Helper:
     @classmethod
@@ -76,6 +78,8 @@ class VacHvcAlgorithm:
 
         self.B_region = (secret_img == self.BLACK)
         self.W_region = (secret_img == self.WHITE)
+
+        self.kernel = self.makeGaussianKernel()
     
     def execute(self):
         # ...or run those yourself.
@@ -129,7 +133,16 @@ class VacHvcAlgorithm:
         def __init__(self, ma1, ma2, kernel):
             self.ma1 = ma1.copy()
             self.ma2 = ma2.copy()
+            self.shape = self.ma1.shape
             self.kernel = kernel.copy()
+
+            self.B_region = B_region.copy()
+            self.W_region = W_region.copy()
+
+            self.cluster_score1 = None
+            self.cluster_score2 = None
+            self.void_score1 = None
+            self.void_score2 = None
             self.initializeScore()
 
         def initalizeScore(self):
@@ -137,7 +150,22 @@ class VacHvcAlgorithm:
             # Must be able to find largest void & cluster, in white region, black region or all.
             
             # maybe do wrapped convolution from OpenCV? Refer to that github for detail...
-            pass
+            
+            # Initialization of score array on ma1
+            cluster_pattern = self.ma1
+            void_pattern = np.logical_not(cluster_pattern).astype(np.int)
+
+            self.cluster_score1 = convolve2d(cluster_pattern, self.kernel, mode='same', boundary='wrap')
+            self.void_score1 = convolve2d(void_pattern, self.kernel, mode='same', boundary='wrap')
+
+            # Initialization of score array on ma2
+            cluster_pattern = self.ma2
+            void_pattern = np.logical_not(cluster_pattern).astype(np.int)
+
+            self.cluster_score2 = convolve2d(cluster_pattern, self.kernel, mode='same', boundary='wrap')
+            self.void_score2 = convolve2d(void_pattern, self.kernel, mode='same', boundary='wrap')
+
+            return
             
         def findVAC(self, img_no: Literal[1, 2], region: Literal['white', 'black', 'all'],
                           vac: Literal['void', 'cluster']) -> tuple[int, int]:
@@ -146,18 +174,38 @@ class VacHvcAlgorithm:
 
             # do some np.min or max on score array should do the trick,
             # but take note of region problems...you can only consider points in specified region
-            pass
+            if vac == 'cluster':
+                pattern = self.cluster_score1 if img_no == 1 else self.cluster_score2
+                if region == 'white':
+                    pattern[self.B_region] = 0
+                elif region == 'black':
+                    pattern[self.W_region] = 0
+                largest_idx = np.argmax(pattern)
+            else:
+                pattern = self.void_score1 if img_no == 1 else self.void_score2
+                if region == 'white':
+                    pattern[self.B_region] = 0
+                elif region == 'black':
+                    pattern[self.W_region] = 0
+                largest_idx = np.argmax(pattern)
+
+            pos = np.unravel_index(largest_idx, self.shape)
+                    
+            return pos
         
         def flipPixel(self, img_no, pos):
             # flip the pixel on pos, will update both self.ma1/2 and score matrix
             # Should be O(kernel.size) instead of O(ma1.size)
 
             img = self.ma1 if img_no == 1 else self.ma2
-            if img[pos] == 1:
-                img[pos] = 0
+            img[pos] = np.logical_not(img[pos]).astype(np.int)
+
+            if img_no == 1:
+                self.ma1 = img
             else:
-                img[pos] = 1
-            
+                self.ma2 = img
+
+            self.update_score(img_no, pos)
             return 
 
         def swapPixel(self, img_no, pos1, pos2):
@@ -168,6 +216,14 @@ class VacHvcAlgorithm:
             """
             img = self.ma1 if img_no == 1 else self.ma2
             img[pos1], img[pos2] = img[pos2], img[pos1]
+
+            if img_no == 1:
+                self.ma1 = img
+            else:
+                self.ma2 = img
+
+            self.update_score(img, pos1)
+            self.update_score(img, pos2)
 
             return
         
@@ -182,7 +238,7 @@ class VacHvcAlgorithm:
         # do VAC-operation 1 to generate threshold matrix
         # psuedocode for algorithm in step1, if I understood correctly
         img_no = random.choice([1, 2])
-        vac = self.VACALgorithm(self.rp1, self.rp2)
+        vac = self.VACAlgorithm(self.rp1, self.rp2, self.B_region, self.W_region, self.kernel)
         for _ in range(max_iter):
             black_pos = vac.findVAC(img_no, 'all', 'cluster')
             vac.flipPixel(img_no, black_pos)
