@@ -192,6 +192,10 @@ class VacHvcAlgorithm:
             pos = np.unravel_index(largest_idx, self.shape)
                     
             return pos
+
+        def update_score(self, img_no, pos):
+            # TODO
+            pass
         
         def flipPixel(self, img_no, pos):
             # flip the pixel on pos, will update both self.ma1/2 and score matrix
@@ -222,9 +226,8 @@ class VacHvcAlgorithm:
             else:
                 self.ma2 = img
 
-            self.update_score(img, pos1)
-            self.update_score(img, pos2)
-
+            self.update_score(img_no, pos1)
+            self.update_score(img_no, pos2)
             return
         
         def getMA(self):
