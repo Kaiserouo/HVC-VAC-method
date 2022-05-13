@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 from scipy.signal import convolve2d
+from tqdm import tqdm
 
 # Helper class containing functions for testing
 class Helper:
@@ -145,7 +146,7 @@ class VacHvcAlgorithm:
             self.void_score2 = None
             self.initializeScore()
 
-        def initalizeScore(self):
+        def initializeScore(self):
             # do initialization on score array, in order to do findVAC and flipPixel
             # Must be able to find largest void & cluster, in white region, black region or all.
             
@@ -153,14 +154,14 @@ class VacHvcAlgorithm:
             
             # Initialization of score array on ma1
             cluster_pattern = self.ma1
-            void_pattern = np.logical_not(cluster_pattern).astype(np.int)
+            void_pattern = np.logical_not(cluster_pattern).astype(np.int32)
 
             self.cluster_score1 = convolve2d(cluster_pattern, self.kernel, mode='same', boundary='wrap')
             self.void_score1 = convolve2d(void_pattern, self.kernel, mode='same', boundary='wrap')
 
             # Initialization of score array on ma2
             cluster_pattern = self.ma2
-            void_pattern = np.logical_not(cluster_pattern).astype(np.int)
+            void_pattern = np.logical_not(cluster_pattern).astype(np.int32)
 
             self.cluster_score2 = convolve2d(cluster_pattern, self.kernel, mode='same', boundary='wrap')
             self.void_score2 = convolve2d(void_pattern, self.kernel, mode='same', boundary='wrap')
@@ -202,7 +203,7 @@ class VacHvcAlgorithm:
             # Should be O(kernel.size) instead of O(ma1.size)
 
             img = self.ma1 if img_no == 1 else self.ma2
-            img[pos] = np.logical_not(img[pos]).astype(np.int)
+            img[pos] = np.logical_not(img[pos]).astype(np.int32)
 
             if img_no == 1:
                 self.ma1 = img
@@ -246,7 +247,7 @@ class VacHvcAlgorithm:
             black_pos = vac.findVAC(img_no, 'all', 'cluster')
             vac.flipPixel(img_no, black_pos)
             region = self.findBelongingRegion(black_pos)
-            white_pos = self.findVAC(img_no, region, 'void')
+            white_pos = vac.findVAC(img_no, region, 'void')
             if white_pos == black_pos:
                 vac.flipPixel(img_no, black_pos)
                 break
@@ -266,27 +267,28 @@ class VacHvcAlgorithm:
         da = np.zeros(sp.shape, np.uint8)
 
         # phase 1: enter RANK values between Ones and 0
-        bp = sp.copy() # binary pattern
+        vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones - 1
-        for r in range(rank, -1, -1):
-            vac = self.VACAlgorithm(bp, bp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
-            cluster_pos = vac.findVAC(1, "black", "cluster")
-            bp[cluster_pos] = WHITE
+        for r in tqdm(range(rank, -1, -1)):
+            cluster_pos = vac.findVAC(1, "all", "cluster")
+            vac.flipPixel(1, cluster_pos)
             da[cluster_pos] = r
 
         # phase 2: enter RANK values between Ones and the half-way point
-        bp = sp.copy() # binary pattern
+        vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones
-        for r in range(rank, sp.size // 2):
-            vac = self.VACAlgorithm(bp, bp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
-            void_pos = vac.findVAC(1, "black", "void")
+        for r in tqdm(range(rank, sp.size // 2)):
+            void_pos = vac.findVAC(1, "all", "void")
+            vac.flipPixel(1, void_pos)
             da[void_pos] = r
+        ma1, ma2 = vac.getMA()
         
         # phase 3: enter RANK values from the half-way point and to all 1's
+        vac = self.VACAlgorithm(ma1, ma2, self.W_region, self.B_region, self.kernel) # reverse the meaning of minority
         rank = sp.size // 2
-        for r in range(rank, sp.size + 1):
-            vac = self.VACAlgorithm(bp, bp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
-            cluster_pos = vac.findVAC(1, "white", "cluster") # reverse the meaning of minority from 1 to 0
+        for r in tqdm(range(rank, sp.size + 1)):
+            cluster_pos = vac.findVAC(1, "all", "cluster")
+            vac.flipPixel(1, cluster_pos)
             da[cluster_pos] = r
 
         return da
@@ -298,10 +300,10 @@ class VacHvcAlgorithm:
     def step2(self):
         # do VAC-operation 2 on 2 seed images. 
         # I guess it is exactly the same as second paper w/o modification...?
-        self.da1 = self.genDitherMatrix(self, self.sp1)
-        self.da2 = self.genDitherMatrix(self, self.sp2)
-        self.ta1 = self.genThresholdArray(self, self.da1)
-        self.ta2 = self.genThresholdArray(self, self.da2)
+        self.da1 = self.genDitherArray(self.sp1)
+        self.da2 = self.genDitherArray(self.sp2)
+        self.ta1 = self.genThresholdArray(self.da1)
+        self.ta2 = self.genThresholdArray(self.da2)
     
     def thresholding(self, img, ta):
         # do thresholding using threshold array `ta` on image `img`
