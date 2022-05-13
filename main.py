@@ -1,13 +1,3 @@
-"""
-    Define:
-        + binary image: image with value 0s and 1s, since it is needed for convolution step
-        + proper image: image with values 0s and 255s
-                        You can use `Helper.binaryToProperImage(img)` to 
-                        turn binary image into proper image.
-        + grayscale image: image with value ranging in [0, 255], with np.uint8
-                           Can be directly shown by cv.imshow()
-"""
-
 import cv2 as cv
 import numpy as np
 from typing import *
@@ -21,6 +11,7 @@ import sys
 from pathlib import Path
 
 from scipy.signal import convolve2d
+from tqdm import tqdm
 
 # Helper class containing functions for testing
 class Helper:
@@ -155,22 +146,20 @@ class VacHvcAlgorithm:
             
             # Initialization of score array on ma1
             cluster_pattern = self.ma1
-            void_pattern = np.logical_not(cluster_pattern).astype(np.int)
+            void_pattern = np.logical_not(cluster_pattern).astype(np.int32)
 
             self.cluster_score1 = convolve2d(cluster_pattern, self.kernel, mode='same', boundary='wrap')
             self.void_score1 = convolve2d(void_pattern, self.kernel, mode='same', boundary='wrap')
 
             # Initialization of score array on ma2
             cluster_pattern = self.ma2
-            void_pattern = np.logical_not(cluster_pattern).astype(np.int)
+            void_pattern = np.logical_not(cluster_pattern).astype(np.int32)
 
             self.cluster_score2 = convolve2d(cluster_pattern, self.kernel, mode='same', boundary='wrap')
             self.void_score2 = convolve2d(void_pattern, self.kernel, mode='same', boundary='wrap')
 
             return
             
-        # def findVAC(self, img_no: Literal[1, 2], region: Literal['white', 'black', 'all'],
-        #                   vac: Literal['void', 'cluster']) -> tuple[int, int]:
         def findVAC(self, img_no, region, vac):
             # find largest void or cluster, on black or white or all region
             # return image coordinate (written in (row, col))
@@ -220,7 +209,7 @@ class VacHvcAlgorithm:
                 self.cluster_score2 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
 
             # Update void score
-            void_patch = np.logical_not(patch).astype(np.int)
+            void_patch = np.logical_not(patch).astype(np.int32)
             void_patch_score = convolve2d(void_patch, self.kernel, mode='valid')
             void_patch_score[void_patch[nx:-nx, ny:-ny]==0] = 0
             if img_no == 1:
@@ -228,19 +217,17 @@ class VacHvcAlgorithm:
                 score[:kx, :ky] = void_patch_score
                 self.void_score1 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
             else:
-                score = np.roll(np.roll(self.void_score1, -off_x, axis=0), -off_y, axis=1)
+                score = np.roll(np.roll(self.void_score2, -off_x, axis=0), -off_y, axis=1)
                 score[:kx, :ky] = void_patch_score
-                self.void_score1 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
-            
+                self.void_score2 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
             return
-
         
         def flipPixel(self, img_no, pos):
             # flip the pixel on pos, will update both self.ma1/2 and score matrix
             # Should be O(kernel.size) instead of O(ma1.size)
 
             img = self.ma1 if img_no == 1 else self.ma2
-            img[pos] = np.logical_not(img[pos]).astype(np.int)
+            img[pos] = np.logical_not(img[pos]).astype(np.int32)
 
             if img_no == 1:
                 self.ma1 = img
@@ -304,27 +291,28 @@ class VacHvcAlgorithm:
         da = np.zeros(sp.shape, np.uint8)
 
         # phase 1: enter RANK values between Ones and 0
-        bp = sp.copy() # binary pattern
+        vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones - 1
-        for r in range(rank, -1, -1):
-            vac = self.VACALgorithm(bp, bp) # for abusing the findVAC() method
-            cluster_pos = vac.findVAC(1, "black", "cluster")
-            bp[cluster_pos] = WHITE
+        for r in tqdm(range(rank, -1, -1)):
+            cluster_pos = vac.findVAC(1, "all", "cluster")
+            vac.flipPixel(1, cluster_pos)
             da[cluster_pos] = r
 
         # phase 2: enter RANK values between Ones and the half-way point
-        bp = sp.copy() # binary pattern
+        vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones
-        for r in range(rank, sp.size // 2):
-            vac = self.VACALgorithm(bp, bp) # for abusing the findVAC() method
-            void_pos = vac.findVAC(1, "black", "void")
+        for r in tqdm(range(rank, sp.size // 2)):
+            void_pos = vac.findVAC(1, "all", "void")
+            vac.flipPixel(1, void_pos)
             da[void_pos] = r
+        ma1, ma2 = vac.getMA()
         
         # phase 3: enter RANK values from the half-way point and to all 1's
+        vac = self.VACAlgorithm(ma1, ma2, self.W_region, self.B_region, self.kernel) # reverse the meaning of minority
         rank = sp.size // 2
-        for r in range(rank, sp.size + 1):
-            vac = self.VACALgorithm(bp, bp) # for abusing the findVAC() method
-            cluster_pos = vac.findVAC(1, "white", "cluster") # reverse the meaning of minority from 1 to 0
+        for r in tqdm(range(rank, sp.size + 1)):
+            cluster_pos = vac.findVAC(1, "all", "cluster")
+            vac.flipPixel(1, cluster_pos)
             da[cluster_pos] = r
 
         return da
@@ -336,10 +324,10 @@ class VacHvcAlgorithm:
     def step2(self):
         # do VAC-operation 2 on 2 seed images. 
         # I guess it is exactly the same as second paper w/o modification...?
-        self.da1 = self.genDitherMatrix(self, self.sp1)
-        self.da2 = self.genDitherMatrix(self, self.sp2)
-        self.ta1 = self.genThresholdArray(self, self.da1)
-        self.ta2 = self.genThresholdArray(self, self.da2)
+        self.da1 = self.genDitherArray(self.sp1)
+        self.da2 = self.genDitherArray(self.sp2)
+        self.ta1 = self.genThresholdArray(self.da1)
+        self.ta2 = self.genThresholdArray(self.da2)
     
     def thresholding(self, img, ta):
         # do thresholding using threshold array `ta` on image `img`
@@ -366,9 +354,9 @@ class Test:
             vh.step0()
         print(f'Step 0 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
-        cv.imshow('rp1.png', Helper.binaryToProperImage(vh.rp1))
-        cv.imshow('rp2.png', Helper.binaryToProperImage(vh.rp2))
-        cv.imshow('reveal secret.png', Helper.binaryToProperImage(np.bitwise_and(vh.rp1, vh.rp2)))
+        cv.imshow('rp1', Helper.binaryToProperImage(vh.rp1))
+        cv.imshow('rp2', Helper.binaryToProperImage(vh.rp2))
+        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.rp1, vh.rp2)))
         cv.waitKey(0)
 
     @classmethod
@@ -379,9 +367,9 @@ class Test:
             vh.step1()
         print(f'Step 0~1 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
-        cv.imshow('sp1.png', Helper.binaryToProperImage(vh.sp1))
-        cv.imshow('sp2.png', Helper.binaryToProperImage(vh.sp2))
-        cv.imshow('reveal secret.png', Helper.binaryToProperImage(np.bitwise_and(vh.sp1, vh.sp2)))
+        cv.imshow('sp1', Helper.binaryToProperImage(vh.sp1))
+        cv.imshow('sp2', Helper.binaryToProperImage(vh.sp2))
+        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.sp1, vh.sp2)))
         cv.waitKey(0)
 
     @classmethod
@@ -444,5 +432,5 @@ def main():
     return
 
 if __name__ == '__main__':
-    Test.Test_Step0()
+    # Test.Test_Step0()
     Test.Test_Step1()
