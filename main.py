@@ -130,11 +130,13 @@ class VacHvcAlgorithm:
         # since it WILL be a mess.
         # ma1 and ma2 should be same shape, of course
         # `img_no` below specifies which `ma` to manipulate
-        def __init__(self, ma1, ma2, kernel):
+        def __init__(self, ma1, ma2, B_region, W_region, kernel):
             self.ma1 = ma1.copy()
             self.ma2 = ma2.copy()
             self.shape = self.ma1.shape
+
             self.kernel = kernel.copy()
+            self.kernel_size = self.kernel.shape
 
             self.B_region = B_region.copy()
             self.W_region = W_region.copy()
@@ -145,7 +147,7 @@ class VacHvcAlgorithm:
             self.void_score2 = None
             self.initializeScore()
 
-        def initalizeScore(self):
+        def initializeScore(self):
             # do initialization on score array, in order to do findVAC and flipPixel
             # Must be able to find largest void & cluster, in white region, black region or all.
             
@@ -167,8 +169,9 @@ class VacHvcAlgorithm:
 
             return
             
-        def findVAC(self, img_no: Literal[1, 2], region: Literal['white', 'black', 'all'],
-                          vac: Literal['void', 'cluster']) -> tuple[int, int]:
+        # def findVAC(self, img_no: Literal[1, 2], region: Literal['white', 'black', 'all'],
+        #                   vac: Literal['void', 'cluster']) -> tuple[int, int]:
+        def findVAC(self, img_no, region, vac):
             # find largest void or cluster, on black or white or all region
             # return image coordinate (written in (row, col))
 
@@ -194,8 +197,43 @@ class VacHvcAlgorithm:
             return pos
 
         def update_score(self, img_no, pos):
-            # TODO
-            pass
+            x,y = pos
+            kx, ky = self.kernel_size
+            nx, ny = kx // 2, ky //2
+            off_x, off_y = (x-nx) % self.shape[0], (y-ny) % self.shape[1]
+
+            img = self.ma1 if img_no == 1 else self.ma2
+            img_pad = np.pad(img, (2*nx, 2*ny), mode='wrap')
+            patch = img_pad[x:x+4*nx+1, y:y+4*ny+1]
+            
+            # Update cluster score
+            cluster_patch = patch
+            cluster_patch_score = convolve2d(cluster_patch, self.kernel, mode='valid')
+            cluster_patch_score[cluster_patch[nx:-nx, ny:-ny]==0] = 0
+            if img_no == 1:
+                score = np.roll(np.roll(self.cluster_score1, -off_x, axis=0), -off_y, axis=1)
+                score[:kx, :ky] = cluster_patch_score
+                self.cluster_score1 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
+            else:
+                score = np.roll(np.roll(self.cluster_score2, -off_x, axis=0), -off_y, axis=1)
+                score[:kx, :ky] = cluster_patch_score
+                self.cluster_score2 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
+
+            # Update void score
+            void_patch = np.logical_not(patch).astype(np.int)
+            void_patch_score = convolve2d(void_patch, self.kernel, mode='valid')
+            void_patch_score[void_patch[nx:-nx, ny:-ny]==0] = 0
+            if img_no == 1:
+                score = np.roll(np.roll(self.void_score1, -off_x, axis=0), -off_y, axis=1)
+                score[:kx, :ky] = void_patch_score
+                self.void_score1 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
+            else:
+                score = np.roll(np.roll(self.void_score1, -off_x, axis=0), -off_y, axis=1)
+                score[:kx, :ky] = void_patch_score
+                self.void_score1 = np.roll(np.roll(score, off_x, axis=0), off_y, axis=1)
+            
+            return
+
         
         def flipPixel(self, img_no, pos):
             # flip the pixel on pos, will update both self.ma1/2 and score matrix
@@ -237,7 +275,7 @@ class VacHvcAlgorithm:
         # find which region / color `pos` is on in secret image
         return 'black' if self.B_region[pos] > 0 else 'white'
 
-    def step1(self, max_iter=100):
+    def step1(self, max_iter=10000):
         # do VAC-operation 1 to generate threshold matrix
         # psuedocode for algorithm in step1, if I understood correctly
         img_no = random.choice([1, 2])
@@ -246,12 +284,12 @@ class VacHvcAlgorithm:
             black_pos = vac.findVAC(img_no, 'all', 'cluster')
             vac.flipPixel(img_no, black_pos)
             region = self.findBelongingRegion(black_pos)
-            white_pos = self.findVAC(img_no, region, 'void')
+            white_pos = vac.findVAC(img_no, region, 'void')
             if white_pos == black_pos:
                 vac.flipPixel(img_no, black_pos)
                 break
             vac.flipPixel(img_no, white_pos)
-            vac.swapPixel(2-img_no, black_pos, white_pos)
+            vac.swapPixel(3-img_no, black_pos, white_pos)
 
         sp1, sp2 = vac.getMA()
         self.sp1 = sp1; self.sp2 = sp2
@@ -328,9 +366,9 @@ class Test:
             vh.step0()
         print(f'Step 0 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
-        cv.imshow('rp1', Helper.binaryToProperImage(vh.rp1))
-        cv.imshow('rp2', Helper.binaryToProperImage(vh.rp2))
-        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.rp1, vh.rp2)))
+        cv.imshow('rp1.png', Helper.binaryToProperImage(vh.rp1))
+        cv.imshow('rp2.png', Helper.binaryToProperImage(vh.rp2))
+        cv.imshow('reveal secret.png', Helper.binaryToProperImage(np.bitwise_and(vh.rp1, vh.rp2)))
         cv.waitKey(0)
 
     @classmethod
@@ -341,9 +379,9 @@ class Test:
             vh.step1()
         print(f'Step 0~1 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
-        cv.imshow('sp1', Helper.binaryToProperImage(vh.sp1))
-        cv.imshow('sp2', Helper.binaryToProperImage(vh.sp2))
-        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.sp1, vh.sp2)))
+        cv.imshow('sp1.png', Helper.binaryToProperImage(vh.sp1))
+        cv.imshow('sp2.png', Helper.binaryToProperImage(vh.sp2))
+        cv.imshow('reveal secret.png', Helper.binaryToProperImage(np.bitwise_and(vh.sp1, vh.sp2)))
         cv.waitKey(0)
 
     @classmethod
@@ -406,4 +444,5 @@ def main():
     return
 
 if __name__ == '__main__':
-    main()
+    Test.Test_Step0()
+    Test.Test_Step1()
