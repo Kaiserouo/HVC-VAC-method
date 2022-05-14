@@ -1,3 +1,4 @@
+from functools import reduce
 import cv2 as cv
 import numpy as np
 from typing import *
@@ -262,12 +263,12 @@ class VacHvcAlgorithm:
         # find which region / color `pos` is on in secret image
         return 'black' if self.B_region[pos] > 0 else 'white'
 
-    def step1(self, max_iter=10000):
+    def step1(self, max_iter=100000):
         # do VAC-operation 1 to generate threshold matrix
         # psuedocode for algorithm in step1, if I understood correctly
         img_no = random.choice([1, 2])
         vac = self.VACAlgorithm(self.rp1, self.rp2, self.B_region, self.W_region, self.kernel)
-        for _ in range(max_iter):
+        for _ in tqdm(range(max_iter), desc='Step 1'):
             black_pos = vac.findVAC(img_no, 'all', 'cluster')
             vac.flipPixel(img_no, black_pos)
             region = self.findBelongingRegion(black_pos)
@@ -293,7 +294,7 @@ class VacHvcAlgorithm:
         # phase 1: enter RANK values between Ones and 0
         vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones - 1
-        for r in tqdm(range(rank, -1, -1)):
+        for r in tqdm(range(rank, -1, -1), desc='Step 2.1'):
             cluster_pos = vac.findVAC(1, "all", "cluster")
             vac.flipPixel(1, cluster_pos)
             da[cluster_pos] = r
@@ -301,7 +302,7 @@ class VacHvcAlgorithm:
         # phase 2: enter RANK values between Ones and the half-way point
         vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones
-        for r in tqdm(range(rank, sp.size)):
+        for r in tqdm(range(rank, sp.size), desc='Step 2.2'):
             void_pos = vac.findVAC(1, "all", "void")
             vac.flipPixel(1, void_pos)
             da[void_pos] = r
@@ -391,9 +392,9 @@ def main():
     )
 
     parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("--input", "-i", help="Greyscale images to be halftoned", required=True, nargs=2)
+    parser.add_argument("--input", "-i", help="2 grayscale images to be halftoned", required=True, nargs=2)
     parser.add_argument("--secret", "-s", help="Binary secret image to be embedded", required=True)
-    parser.add_argument("--output", "-o", help="Binary output image path, should be 2 different path", required=True, nargs=2)
+    parser.add_argument("--output", "-o", help="2 binary output image path, should be 2 different path", required=True, nargs=2)
     args = parser.parse_args()
 
     input_paths = [Path(p) for p in args.input]
@@ -407,7 +408,8 @@ def main():
     input_imgs = [cv.imread(str(p), cv.IMREAD_GRAYSCALE) for p in input_paths]
     secret_img = cv.imread(str(secret_path), cv.IMREAD_GRAYSCALE)
 
-    if None in (input_imgs + [secret_img]):
+    # check if any of the images are None (i.e. read failed)
+    if reduce(lambda x,y: x or y, filter(lambda x: x is None, input_imgs + [secret_img]), False):
         print('Failed to read images!', file=sys.stderr)
         exit(1)
     
@@ -423,8 +425,4 @@ def main():
     return
 
 if __name__ == '__main__':
-    # Test.Test_Step0()
-    Test.Test_All(
-        cv.imread('imgs/img_a.png', cv.IMREAD_GRAYSCALE),
-        cv.imread('imgs/img_b.png', cv.IMREAD_GRAYSCALE)
-    )
+    main()
