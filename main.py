@@ -288,7 +288,7 @@ class VacHvcAlgorithm:
         # should do the trick
         BLACK, WHITE = self.BLACK, self.WHITE
         num_ones = np.count_nonzero(sp == BLACK)
-        da = np.zeros(sp.shape, np.uint8)
+        da = np.zeros(sp.shape, int)
 
         # phase 1: enter RANK values between Ones and 0
         vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
@@ -301,19 +301,10 @@ class VacHvcAlgorithm:
         # phase 2: enter RANK values between Ones and the half-way point
         vac = self.VACAlgorithm(sp, sp, self.B_region, self.W_region, self.kernel) # for abusing the findVAC() method
         rank = num_ones
-        for r in tqdm(range(rank, sp.size // 2)):
+        for r in tqdm(range(rank, sp.size)):
             void_pos = vac.findVAC(1, "all", "void")
             vac.flipPixel(1, void_pos)
             da[void_pos] = r
-        ma1, ma2 = vac.getMA()
-        
-        # phase 3: enter RANK values from the half-way point and to all 1's
-        vac = self.VACAlgorithm(ma1, ma2, self.W_region, self.B_region, self.kernel) # reverse the meaning of minority
-        rank = sp.size // 2
-        for r in tqdm(range(rank, sp.size + 1)):
-            cluster_pos = vac.findVAC(1, "all", "cluster")
-            vac.flipPixel(1, cluster_pos)
-            da[cluster_pos] = r
 
         return da
     
@@ -433,4 +424,7 @@ def main():
 
 if __name__ == '__main__':
     # Test.Test_Step0()
-    Test.Test_Step1()
+    Test.Test_All(
+        cv.imread('imgs/img_a.png', cv.IMREAD_GRAYSCALE),
+        cv.imread('imgs/img_b.png', cv.IMREAD_GRAYSCALE)
+    )
