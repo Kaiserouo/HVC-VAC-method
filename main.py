@@ -3,6 +3,7 @@ import cv2 as cv
 import numpy as np
 from typing import *
 import random
+import pickle
 
 from contextlib import contextmanager
 from timeit import default_timer
@@ -57,13 +58,10 @@ class Helper:
     
 
 class VacHvcAlgorithm:
-    def __init__(self, secret_img, img1, img2):
+    def __init__(self, secret_img):
         # secret_img must be binary
-        # img1, img2 should be grayscale (np.uint8)
         # secret_img, img1 and img2 must be same size
         self.secret_img = secret_img
-        self.img1 = img1
-        self.img2 = img2
 
         self.BLACK = 0
         self.WHITE = 1
@@ -73,15 +71,21 @@ class VacHvcAlgorithm:
 
         self.kernel = self.makeGaussianKernel()
     
-    def execute(self):
-        # ...or run those yourself.
+    def prepare(self):
+        # prepare the part before actually doing thresholding on grayscale images
         self.step0()
         self.step1()
         self.step2()
-        self.step3()
     
-    def getResult(self):
-        return self.result1, self.result2
+    def execute(self, img1, img2):
+        # do thresholding on grayscale images
+        # img1, img2 should be grayscale (np.uint8)
+        # and should be the same size as secret_img
+        if img1.shape != self.secret_img.shape or img2.shape != self.secret_img.shape:
+            raise Exception('img1, img2 is not as same shape as secret_img')
+        return self.step3(img1, img2)
+
+    # ---
 
     def makeGaussianKernel(self, kernel_sz=9, sigma=1.5):
         # kernel_sz must be odd
@@ -331,17 +335,18 @@ class VacHvcAlgorithm:
                 img[r, c] = 255 if img[r, c] >= ta[r%n, c%m] else 0
         return img
 
-    def step3(self):
+    def step3(self, img1, img2):
         # do thresholding on both images, maybe returning or store the 2 result image...?
-        self.result1 = self.thresholding(self.img1, self.ta1)
-        self.result2 = self.thresholding(self.img2, self.ta2)
+        result1 = self.thresholding(img1, self.ta1)
+        result2 = self.thresholding(img2, self.ta2)
+        return result1, result2
     
 # Test class running tests
 # No step 2 because displaying dither / threshold array is not really helpful
 class Test:
     @classmethod
     def Test_Step0(cls):
-        vh = VacHvcAlgorithm(Helper.makeSecret(), None, None)
+        vh = VacHvcAlgorithm(Helper.makeSecret())
         with Helper.elapsed_timer() as elapsed:
             vh.step0()
         print(f'Step 0 uses {elapsed():.5f} second')
@@ -353,7 +358,7 @@ class Test:
 
     @classmethod
     def Test_Step1(cls):
-        vh = VacHvcAlgorithm(Helper.makeSecret(), None, None)
+        vh = VacHvcAlgorithm(Helper.makeSecret())
         with Helper.elapsed_timer() as elapsed:
             vh.step0()
             vh.step1()
@@ -366,17 +371,17 @@ class Test:
 
     @classmethod
     def Test_All(cls, img1, img2):
-        vh = VacHvcAlgorithm(Helper.makeSecret(), img1, img2)
+        vh = VacHvcAlgorithm(Helper.makeSecret())
         with Helper.elapsed_timer() as elapsed:
             vh.step0()
             vh.step1()
             vh.step2()
-            vh.step3()
+            result1, result2 = vh.step3(img1, img2)
         print(f'Step 0~3 uses {elapsed():.5f} second')
         cv.imshow('secret', Helper.binaryToProperImage(vh.secret_img))
-        cv.imshow('result1', Helper.binaryToProperImage(vh.result1))
-        cv.imshow('result2', Helper.binaryToProperImage(vh.result2))
-        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(vh.result1, vh.result2)))
+        cv.imshow('result1', Helper.binaryToProperImage(result1))
+        cv.imshow('result2', Helper.binaryToProperImage(result2))
+        cv.imshow('reveal secret', Helper.binaryToProperImage(np.bitwise_and(result1, result2)))
         cv.waitKey(0)
         
 
@@ -385,42 +390,93 @@ def main():
         "   VAC-based Halftoned Visual Cryptography (HVC-VAC)\n"
         "   \n"
         "   Given 2 (grayscale) images and 1 secret binary image,\n"
-        "   generate 2 binary images s.t. if you binary-AND those 2 images,\n"
+        "   generate 2 binary images s.t. if you bitwise-AND those 2 images,\n"
         "   you can see the secret image.\n"
-        "   \n"
         "   All 3 input images should be the same size.\n"
+        "   \n"
+        "   Or if you just want to save the VAC result (i.e. the thresholding arrays and stuff),\n"
+        "   you can choose to save the pickled model, so that you can skip the lengthy VAC part and\n"
+        "   do thresholding directly on your images later on, by loading back the model.\n"
+        "   (The thresholding part is very fast, the time is mostly spent on making the thresholding arrays)\n"
+        "   \n"
+        "   Refer to examples (in folder `example/`) if you need more examples on how to use this.\n"
     )
 
     parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("--input", "-i", help="2 grayscale images to be halftoned", required=True, nargs=2)
-    parser.add_argument("--secret", "-s", help="Binary secret image to be embedded", required=True)
-    parser.add_argument("--output", "-o", help="2 binary output image path, should be 2 different path", required=True, nargs=2)
+    parser.add_argument("--input", "-i", help="2 grayscale images to be halftoned", nargs=2)
+    parser.add_argument("--output", "-o", help="2 binary output image path, should be 2 different path", nargs=2)
+    parser.add_argument("--save_model", "-m", help=""
+        "Save the pickled model into some destination for further usage.\n"
+        "The pickled model is dependent to the secret image, but not input image")
+    parser.add_argument("--and_result", "-a", help="Save the bitwise-AND result into the designated path")
+    parser.add_argument("--color", "-c", help="Do color version HVC, default grayscale.", action="store_true")
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--secret", "-s", help="Binary secret image to be embedded")
+    group.add_argument("--load_model", "-l", help="Load the pickled model")
     args = parser.parse_args()
 
-    input_paths = [Path(p) for p in args.input]
-    secret_path = Path(args.secret)
-    output_paths = [Path(p) for p in args.output]
-
-    if output_paths[0].resolve() == output_paths[1].resolve():
-        print('2 output path are the same!', file=sys.stderr)
+    # check argument
+    if bool(args.input) ^ bool(args.output):
+        print('Must either specify both input & output, or neither of them.')
+        exit(1)
+    if bool(args.and_result) and not bool(args.input):
+        print('Must input image to do bitwise-AND on result.')
         exit(1)
     
-    input_imgs = [cv.imread(str(p), cv.IMREAD_GRAYSCALE) for p in input_paths]
-    secret_img = cv.imread(str(secret_path), cv.IMREAD_GRAYSCALE)
+    # load input image & output path
+    if args.input is not None:
+        input_paths = [Path(p) for p in args.input]
+        output_paths = [Path(p) for p in args.output]
 
-    # check if any of the images are None (i.e. read failed)
-    if reduce(lambda x,y: x or y, filter(lambda x: x is None, input_imgs + [secret_img]), False):
-        print('Failed to read images!', file=sys.stderr)
-        exit(1)
-    
-    secret_img = Helper.properToBinaryImage(secret_img)
+        mode = cv.IMREAD_COLOR if args.color else cv.IMREAD_GRAYSCALE
+        input_imgs = [cv.imread(str(p), mode) for p in input_paths]
+        # check if any of the images are None (i.e. read failed)
+        if reduce(lambda x,y: x or y, filter(lambda x: x is None, input_imgs), False):
+            print('Failed to read input images!', file=sys.stderr)
+            exit(1)
 
-    vachvc = VacHvcAlgorithm(secret_img, *input_imgs)
-    vachvc.execute()
-    output_imgs = vachvc.getResult()
+    # load secret image
+    if args.secret is not None:
+        secret_path = Path(args.secret) if args.secret is not None else None
+        secret_img = cv.imread(str(secret_path), cv.IMREAD_GRAYSCALE)
+        if secret_img is None:
+            print('Failed to read secret images!', file=sys.stderr)
+            exit(1)
+        secret_img = Helper.properToBinaryImage(secret_img)
+
+    # make / load model
+    if args.load_model is not None:
+        with open(str(Path(args.load_model)), 'rb') as f:
+            vachvc = pickle.load(f)
+    else:
+        vachvc = VacHvcAlgorithm(secret_img)
+        vachvc.prepare()
+
+    # save model
+    if args.save_model is not None:
+        with open(str(Path(args.save_model)), 'wb') as f:
+            pickle.dump(vachvc, f)
     
-    for output_img, output_path in zip(output_imgs, output_paths):
-        cv.imwrite(str(output_path), output_img)
+    # infer images
+    if args.input:
+        output_imgs = []
+
+        img1, img2 = input_imgs[0], input_imgs[1]
+        if not args.color:
+            # grayscale
+            output_imgs = vachvc.execute(img1, img2)
+        else:
+            # color
+            for chnl in range(3):
+                img1[:,:,chnl], img2[:,:,chnl] = vachvc.execute(img1[:,:,chnl], img2[:,:,chnl])
+            output_imgs = [img1, img2]
+                
+        for output_img, output_path in zip(output_imgs, output_paths):
+            cv.imwrite(str(output_path), output_img)
+        
+        if args.and_result:
+            cv.imwrite(str(Path(args.and_result)), np.bitwise_and(*output_imgs))
     
     return
 
