@@ -1,3 +1,13 @@
+"""
+    Define:
+        + binary image: image with value 0s and 1s, since it is needed for convolution step
+        + proper image: image with values 0s and 255s
+                        You can use `Helper.binaryToProperImage(img)` to 
+                        turn binary image into proper image.
+        + grayscale image: image with value ranging in [0, 255], with np.uint8
+                           Can be directly shown by cv.imshow()
+"""
+
 from functools import reduce
 import cv2 as cv
 import numpy as np
